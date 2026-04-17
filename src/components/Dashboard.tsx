@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { GlassCard } from "./GlassCard";
 import { 
   TrendingUp, 
@@ -8,7 +9,9 @@ import {
   ArrowDownRight,
   Clock,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Package,
+  AlertTriangle
 } from "lucide-react";
 import { 
   AreaChart, 
@@ -29,7 +32,7 @@ import { formatCurrency, cn } from "@/src/lib/utils";
 import { format, subDays, startOfMonth, endOfMonth, isWithinInterval } from "date-fns";
 
 export const Dashboard: React.FC<{ user: any }> = ({ user }) => {
-  const [data, setData] = useState<any>({ income: [], expenses: [], settings: null });
+  const [data, setData] = useState<any>({ income: [], expenses: [], settings: null, stock: [] });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -37,19 +40,21 @@ export const Dashboard: React.FC<{ user: any }> = ({ user }) => {
       try {
         const token = localStorage.getItem("token");
         const headers = { Authorization: `Bearer ${token}` };
-        const [incRes, expRes, setRes] = await Promise.all([
+        const [incRes, expRes, setRes, stockRes] = await Promise.all([
           fetch("/api/income", { headers }),
           fetch("/api/expenses", { headers }),
-          fetch("/api/settings", { headers })
+          fetch("/api/settings", { headers }),
+          fetch("/api/stock", { headers })
         ]);
         
-        if (incRes.ok && expRes.ok && setRes.ok) {
-          const [income, expenses, settings] = await Promise.all([
+        if (incRes.ok && expRes.ok && setRes.ok && stockRes.ok) {
+          const [income, expenses, settings, stock] = await Promise.all([
             incRes.json(),
             expRes.json(),
-            setRes.json()
+            setRes.json(),
+            stockRes.json()
           ]);
-          setData({ income, expenses, settings });
+          setData({ income, expenses, settings, stock });
         }
       } catch (error) {
         if (process.env.NODE_ENV === "development") {
@@ -186,6 +191,26 @@ export const Dashboard: React.FC<{ user: any }> = ({ user }) => {
             <span>Requires attention</span>
           </div>
         </GlassCard>
+
+        {(user.role === "Admin" || user.role === "Manager") && data.stock.some((item: any) => item.quantity <= item.min_stock_level) && (
+          <GlassCard className="border-l-4 border-red-500 bg-red-500/5">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Low Stock Alert</p>
+                <h3 className="text-2xl font-bold text-white">
+                  {data.stock.filter((item: any) => item.quantity <= item.min_stock_level).length} Items
+                </h3>
+              </div>
+              <div className="p-2 bg-red-500/10 rounded-lg">
+                <Package className="text-red-500 w-5 h-5" />
+              </div>
+            </div>
+            <div className="mt-4 flex items-center gap-1 text-xs text-red-400 font-bold">
+              <AlertTriangle className="w-3 h-3" />
+              <span>Restock recommended</span>
+            </div>
+          </GlassCard>
+        )}
       </div>
 
       {/* Source Balances Grid */}
@@ -323,7 +348,44 @@ export const Dashboard: React.FC<{ user: any }> = ({ user }) => {
         </GlassCard>
       </div>
 
-      {/* Recent Activity */}
+        {(user.role === "Admin" || user.role === "Manager") && (
+          <GlassCard className="lg:col-span-2">
+            <div className="flex items-center justify-between mb-6">
+              <h4 className="text-lg font-bold text-white flex items-center gap-2">
+                <Package className="w-5 h-5 text-blue-500" /> Stock Overview
+              </h4>
+              <Link to="/inventory" className="text-xs text-blue-400 hover:text-blue-300 font-bold uppercase tracking-wider">
+                View Inventory
+              </Link>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="p-4 bg-white/5 rounded-xl border border-white/5">
+                <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-1">Total Items</p>
+                <p className="text-xl font-bold text-white">{data.stock.length}</p>
+              </div>
+              <div className="p-4 bg-white/5 rounded-xl border border-white/5">
+                <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-1">Low Stock</p>
+                <p className="text-xl font-bold text-red-400">
+                  {data.stock.filter((item: any) => item.quantity <= item.min_stock_level).length}
+                </p>
+              </div>
+              <div className="p-4 bg-white/5 rounded-xl border border-white/5">
+                <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-1">In Stock</p>
+                <p className="text-xl font-bold text-emerald-400">
+                  {data.stock.filter((item: any) => item.quantity > item.min_stock_level).length}
+                </p>
+              </div>
+              <div className="p-4 bg-white/5 rounded-xl border border-white/5">
+                <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-1">Out of Stock</p>
+                <p className="text-xl font-bold text-slate-400">
+                  {data.stock.filter((item: any) => item.quantity === 0).length}
+                </p>
+              </div>
+            </div>
+          </GlassCard>
+        )}
+
+        {/* Recent Activity */}
       <GlassCard>
         <h4 className="text-lg font-bold text-white mb-6">Recent Activity</h4>
         <div className="space-y-4">

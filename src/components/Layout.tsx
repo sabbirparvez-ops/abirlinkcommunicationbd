@@ -16,7 +16,9 @@ import {
   Bell,
   Check,
   Calendar,
-  ClipboardList
+  ClipboardList,
+  Package,
+  ShoppingCart
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { Notification } from "@/src/types";
@@ -116,6 +118,7 @@ export const Layout: React.FC<{ user: any; onLogout: () => void }> = ({ user, on
     { icon: PlusCircle, label: "Add Income", path: "/income" },
     { icon: MinusCircle, label: "Add Expense", path: "/expense" },
     { icon: ClipboardList, label: "Requisition", path: "/requisition" },
+    { icon: Package, label: "Inventory", path: "/inventory", roles: ["Admin", "Manager"] },
     { icon: CheckCircle, label: "Approvals", path: "/approvals", roles: ["Admin", "Manager"] },
     { icon: BookOpen, label: "Petty Cash", path: "/petty-cash" },
     { icon: FileBarChart, label: "Reports", path: "/reports" },

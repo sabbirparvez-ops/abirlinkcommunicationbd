@@ -103,12 +103,17 @@ add_shortcode( 'abirlink_erp', 'abirlink_erp_shortcode' );
   };
 
   const handleReset = async () => {
-    if (!confirm("CRITICAL: This will delete all income and expense data. Are you sure?")) return;
+    if (!confirm("CRITICAL: This will delete ALL data (Income, Expenses, Inventory, Requisitions, etc.) and reset balances to zero. This action cannot be undone. Are you sure?")) return;
     const res = await fetch("/api/admin/reset", {
       method: "POST",
       headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
     });
-    if (res.ok) alert("System data reset successfully!");
+    if (res.ok) {
+      alert("System data reset successfully!");
+      window.location.reload();
+    } else {
+      alert("Failed to reset system data.");
+    }
   };
 
   if (loading) return <div className="text-slate-400">Loading settings...</div>;

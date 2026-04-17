@@ -11,6 +11,7 @@ import { Reports } from "./components/Reports";
 import { PettyCashBook } from "./components/PettyCashBook";
 import { Settings } from "./components/Settings";
 import { Requisition } from "./components/Requisition";
+import { Inventory } from "./components/Inventory";
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
@@ -70,6 +71,7 @@ export default function App() {
           <Route path="reports" element={<Reports user={user} />} />
           <Route path="petty-cash" element={<PettyCashBook user={user} />} />
           <Route path="requisition" element={<Requisition user={user} />} />
+          <Route path="inventory" element={<Inventory user={user} />} />
           <Route path="settings" element={<Settings user={user} />} />
         </Route>
       </Routes>

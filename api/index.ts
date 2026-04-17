@@ -17,9 +17,14 @@ let fallbackData: any = {
   expenses: [], 
   requisitions: [], 
   notifications: [], 
+  stock_items: [],
+  purchases: [],
+  due_payments: [],
+  stock_out: [],
   settings: { 
-    companyName: "Abirlink ERP (Offline Mode)", 
-    balances: { cash: 0, bkash: 0, nagad: 0, dbbl: 0 } 
+    companyName: "Abirlink ERP", 
+    balances: { cash: 0, bkash: 0, nagad: 0, dbbl: 0 },
+    logo: null
   } 
 };
 let useFallback = false;
@@ -160,6 +165,64 @@ async function initializeDB() {
         date DATETIME DEFAULT (datetime('now','localtime')),
         status TEXT DEFAULT 'Pending',
         adminNote TEXT,
+        created_at DATETIME DEFAULT (datetime('now','localtime'))
+      )
+    `);
+
+    // Create Stock Items Table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS stock_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        quantity DECIMAL(15,2) DEFAULT 0,
+        unit TEXT DEFAULT 'pcs',
+        last_purchase_price DECIMAL(15,2) DEFAULT 0,
+        min_stock_level DECIMAL(15,2) DEFAULT 0,
+        created_at DATETIME DEFAULT (datetime('now','localtime'))
+      )
+    `);
+
+    // Create Purchases Table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS purchases (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        itemId INTEGER NOT NULL,
+        quantity DECIMAL(15,2) NOT NULL,
+        pricePerUnit DECIMAL(15,2) NOT NULL,
+        totalAmount DECIMAL(15,2) NOT NULL,
+        paidAmount DECIMAL(15,2) DEFAULT 0,
+        dueAmount DECIMAL(15,2) DEFAULT 0,
+        supplier TEXT,
+        source TEXT NOT NULL,
+        date DATETIME DEFAULT (datetime('now','localtime')),
+        userId INTEGER NOT NULL,
+        created_at DATETIME DEFAULT (datetime('now','localtime'))
+      )
+    `);
+
+    // Create Due Payments Table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS due_payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        purchaseId INTEGER NOT NULL,
+        amount DECIMAL(15,2) NOT NULL,
+        source TEXT NOT NULL,
+        date DATETIME DEFAULT (datetime('now','localtime')),
+        userId INTEGER NOT NULL,
+        created_at DATETIME DEFAULT (datetime('now','localtime'))
+      )
+    `);
+
+    // Create Stock Out Table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS stock_out (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        itemId INTEGER NOT NULL,
+        quantity DECIMAL(15,2) NOT NULL,
+        destination TEXT NOT NULL,
+        date DATETIME DEFAULT (datetime('now','localtime')),
+        userId INTEGER NOT NULL,
         created_at DATETIME DEFAULT (datetime('now','localtime'))
       )
     `);
@@ -695,14 +758,53 @@ app.post("/api/admin/reset", authenticate, async (req: any, res) => {
       fallbackData.income = [];
       fallbackData.expenses = [];
       fallbackData.notifications = [];
+      fallbackData.requisitions = [];
+      fallbackData.stock_items = [];
+      fallbackData.purchases = [];
+      fallbackData.due_payments = [];
+      fallbackData.stock_out = [];
+      fallbackData.users = fallbackData.users.filter((u: any) => u.username === "admin");
+      fallbackData.settings = { 
+        companyName: "Abirlink ERP", 
+        balances: { cash: 0, bkash: 0, nagad: 0, dbbl: 0 },
+        logo: null
+      };
       await saveFallback();
       return res.json({ success: true });
     }
+    
+    // SQLite Reset
     await pool.query("DELETE FROM income");
     await pool.query("DELETE FROM expenses");
     await pool.query("DELETE FROM notifications");
+    await pool.query("DELETE FROM requisitions");
+    await pool.query("DELETE FROM stock_items");
+    await pool.query("DELETE FROM purchases");
+    await pool.query("DELETE FROM due_payments");
+    await pool.query("DELETE FROM stock_out");
+    await pool.query("DELETE FROM users WHERE username != 'admin'");
+    
+    // Reset settings to default
+    const defaultBalances = JSON.stringify({ cash: 0, bkash: 0, nagad: 0, dbbl: 0 });
+    await pool.query("UPDATE settings SET companyName = ?, logo = ?, balances = ?", ["Abirlink ERP", null, defaultBalances]);
+    
+    // Clear uploads directory
+    try {
+      const uploadsDir = path.join(process.cwd(), "uploads");
+      const files = await fs.readdir(uploadsDir);
+      for (const file of files) {
+        if (file !== ".gitkeep") { // Keep .gitkeep if it exists
+          await fs.unlink(path.join(uploadsDir, file));
+        }
+      }
+    } catch (err) {
+      console.error("Failed to clear uploads:", err);
+      // Don't fail the whole reset if uploads fail to clear
+    }
+    
     res.json({ success: true });
   } catch (error) {
+    console.error("Reset error:", error);
     res.status(500).json({ error: "Failed to reset data" });
   }
 });
@@ -736,6 +838,205 @@ app.put("/api/notifications/read-all", authenticate, async (req: any, res) => {
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: "Failed to mark notifications as read" });
+  }
+});
+
+// Stock Management Endpoints
+app.get("/api/stock", authenticate, async (req, res) => {
+  try {
+    const [stock]: any = await pool.query("SELECT * FROM stock_items ORDER BY name ASC");
+    res.json(stock);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch stock" });
+  }
+});
+
+app.post("/api/stock", authenticate, async (req: any, res) => {
+  if (req.user.role !== "Admin" && req.user.role !== "Manager") return res.status(403).json({ error: "Forbidden" });
+  try {
+    const { name, description, unit, min_stock_level } = req.body;
+    const [result]: any = await pool.query(
+      "INSERT INTO stock_items (name, description, unit, min_stock_level) VALUES (?, ?, ?, ?)",
+      [name, description, unit, min_stock_level || 0]
+    );
+    res.json({ id: result.insertId, name, description, unit, min_stock_level, quantity: 0, last_purchase_price: 0 });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to add stock item" });
+  }
+});
+
+app.put("/api/stock/:id", authenticate, async (req: any, res) => {
+  if (req.user.role !== "Admin" && req.user.role !== "Manager") return res.status(403).json({ error: "Forbidden" });
+  try {
+    const { name, description, unit, min_stock_level } = req.body;
+    await pool.query(
+      "UPDATE stock_items SET name = ?, description = ?, unit = ?, min_stock_level = ? WHERE id = ?",
+      [name, description, unit, min_stock_level, req.params.id]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to update stock item" });
+  }
+});
+
+// Purchase Endpoints
+app.get("/api/purchases", authenticate, async (req, res) => {
+  try {
+    const [purchases]: any = await pool.query(`
+      SELECT p.*, s.name as itemName, u.name as userName 
+      FROM purchases p 
+      JOIN stock_items s ON p.itemId = s.id 
+      JOIN users u ON p.userId = u.id 
+      ORDER BY p.date DESC
+    `);
+    res.json(purchases);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch purchases" });
+  }
+});
+
+app.post("/api/purchases", authenticate, async (req: any, res) => {
+  try {
+    const { itemId, quantity, pricePerUnit, supplier, source, date, paidAmount } = req.body;
+    const totalAmount = quantity * pricePerUnit;
+    const purchaseDate = date ? new Date(date) : new Date();
+    const paid = Number(paidAmount || 0);
+    const due = totalAmount - paid;
+
+    // 1. Record Purchase
+    const [result]: any = await pool.query(
+      "INSERT INTO purchases (itemId, quantity, pricePerUnit, totalAmount, paidAmount, dueAmount, supplier, source, date, userId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [itemId, quantity, pricePerUnit, totalAmount, paid, due, supplier, source, purchaseDate, req.user.id]
+    );
+
+    const purchaseId = result.insertId;
+
+    // 2. Update Stock
+    await pool.query(
+      "UPDATE stock_items SET quantity = quantity + ?, last_purchase_price = ? WHERE id = ?",
+      [quantity, pricePerUnit, itemId]
+    );
+
+    // 3. Adjust Balance (Add as Approved Expense for the paid amount)
+    if (paid > 0) {
+      const [item]: any = await pool.query("SELECT name FROM stock_items WHERE id = ?", [itemId]);
+      const itemName = item[0]?.name || "Stock Item";
+      
+      await pool.query(
+        "INSERT INTO expenses (userId, amount, category, subcategory, source, description, date, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'Approved')",
+        [req.user.id, paid, "Stock Purchase", itemName, source, `Purchase of ${quantity} ${itemName} from ${supplier || 'Unknown'} (Paid: ${paid})`, purchaseDate]
+      );
+    }
+
+    res.json({ id: purchaseId, success: true });
+  } catch (error) {
+    console.error("Purchase error:", error);
+    res.status(500).json({ error: "Failed to record purchase" });
+  }
+});
+
+// Due Purchase Endpoints
+app.get("/api/due-purchases", authenticate, async (req, res) => {
+  try {
+    const [dues]: any = await pool.query(`
+      SELECT p.*, s.name as itemName, u.name as userName 
+      FROM purchases p 
+      JOIN stock_items s ON p.itemId = s.id 
+      JOIN users u ON p.userId = u.id 
+      WHERE p.dueAmount > 0
+      ORDER BY p.date DESC
+    `);
+    res.json(dues);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch due purchases" });
+  }
+});
+
+app.post("/api/due-payments", authenticate, async (req: any, res) => {
+  try {
+    const { purchaseId, amount, source, date } = req.body;
+    const paymentDate = date ? new Date(date) : new Date();
+    const payAmount = Number(amount);
+
+    // 1. Get purchase details
+    const [purchases]: any = await pool.query("SELECT * FROM purchases WHERE id = ?", [purchaseId]);
+    if (purchases.length === 0) return res.status(404).json({ error: "Purchase not found" });
+    
+    const purchase = purchases[0];
+    if (payAmount > purchase.dueAmount) {
+      return res.status(400).json({ error: "Payment amount exceeds due amount" });
+    }
+
+    // 2. Record Payment
+    await pool.query(
+      "INSERT INTO due_payments (purchaseId, amount, source, date, userId) VALUES (?, ?, ?, ?, ?)",
+      [purchaseId, payAmount, source, paymentDate, req.user.id]
+    );
+
+    // 3. Update Purchase
+    await pool.query(
+      "UPDATE purchases SET paidAmount = paidAmount + ?, dueAmount = dueAmount - ? WHERE id = ?",
+      [payAmount, payAmount, purchaseId]
+    );
+
+    // 4. Create Expense
+    await pool.query(
+      "INSERT INTO expenses (userId, amount, category, subcategory, source, description, date, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'Approved')",
+      [req.user.id, payAmount, "Due Payment", "Inventory", source, `Due Payment for Purchase ID: ${purchaseId}`, paymentDate]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Due payment error:", error);
+    res.status(500).json({ error: "Failed to record due payment" });
+  }
+});
+
+// Stock Out Endpoints
+app.get("/api/stock-out", authenticate, async (req, res) => {
+  try {
+    const [stockOut]: any = await pool.query(`
+      SELECT so.*, s.name as itemName, u.name as userName 
+      FROM stock_out so 
+      JOIN stock_items s ON so.itemId = s.id 
+      JOIN users u ON so.userId = u.id 
+      ORDER BY so.date DESC
+    `);
+    res.json(stockOut);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch stock out history" });
+  }
+});
+
+app.post("/api/stock-out", authenticate, async (req: any, res) => {
+  try {
+    const { itemId, quantity, destination, date } = req.body;
+    const stockOutDate = date ? new Date(date) : new Date();
+
+    // 1. Check stock availability
+    const [stock]: any = await pool.query("SELECT quantity, name FROM stock_items WHERE id = ?", [itemId]);
+    if (stock.length === 0) return res.status(404).json({ error: "Item not found" });
+    
+    if (stock[0].quantity < quantity) {
+      return res.status(400).json({ error: `Insufficient stock. Available: ${stock[0].quantity}` });
+    }
+
+    // 2. Record Stock Out
+    const [result]: any = await pool.query(
+      "INSERT INTO stock_out (itemId, quantity, destination, date, userId) VALUES (?, ?, ?, ?, ?)",
+      [itemId, quantity, destination, stockOutDate, req.user.id]
+    );
+
+    // 3. Update Stock
+    await pool.query(
+      "UPDATE stock_items SET quantity = quantity - ? WHERE id = ?",
+      [quantity, itemId]
+    );
+
+    res.json({ id: result.insertId, success: true });
+  } catch (error) {
+    console.error("Stock out error:", error);
+    res.status(500).json({ error: "Failed to record stock out" });
   }
 });
 
