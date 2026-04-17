@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { Notification } from "@/src/types";
+import { AwakeManager } from "./AwakeManager";
 
 export const Layout: React.FC<{ user: any; onLogout: () => void }> = ({ user, onLogout }) => {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
@@ -230,6 +231,9 @@ export const Layout: React.FC<{ user: any; onLogout: () => void }> = ({ user, on
           </div>
 
           <div className="flex items-center gap-4">
+            <div className="hidden lg:block">
+              <AwakeManager />
+            </div>
             <div className="relative">
               <button 
                 onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}

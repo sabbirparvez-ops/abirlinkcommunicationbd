@@ -29,13 +29,6 @@ export default function App() {
       }
     }
     setLoading(false);
-
-    // Client-side keep-alive ping (every 10 minutes)
-    const pingInterval = setInterval(() => {
-      fetch("/api/health").catch(() => {});
-    }, 10 * 60 * 1000);
-
-    return () => clearInterval(pingInterval);
   }, []);
 
   const handleLogin = (userData: any, token: string) => {
