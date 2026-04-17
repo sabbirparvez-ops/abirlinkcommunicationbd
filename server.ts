@@ -10,6 +10,12 @@ const PORT = 3000;
 async function startServer() {
   const app = express();
 
+  // Set Permissions-Policy for Wake Lock early
+  app.use((req, res, next) => {
+    res.setHeader("Permissions-Policy", "screen-wake-lock=*, wake-lock=*");
+    next();
+  });
+
   // Mount API routes
   app.use(apiApp);
 

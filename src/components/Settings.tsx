@@ -44,7 +44,7 @@ function abirlink_erp_shortcode( $atts ) {
 
 	// Output the iframe
 	$output = '<div class="abirlink-erp-container" style="width: ' . $width . '; height: ' . $height . '; overflow: hidden; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); border: 1px solid rgba(255,255,255,0.1);">';
-	$output .= '<iframe src="' . $url . '" style="width: 100%; height: 100%; border: none;" allow="camera; microphone; geolocation" allowfullscreen></iframe>';
+	$output .= '<iframe src="' . $url . '" style="width: 100%; height: 100%; border: none;" allow="camera; microphone; geolocation; screen-wake-lock; wake-lock" allowfullscreen></iframe>';
 	$output .= '</div>';
 
 	return $output;

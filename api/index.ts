@@ -7,6 +7,7 @@ import fs from "fs/promises";
 import pool from "../src/lib/mysql";
 
 const app = express();
+
 const DB_FILE = path.join(process.cwd(), "db.json");
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-key";
 
